@@ -192,8 +192,14 @@ grammar =
   # of **Block** preceded by a function arrow, with an optional parameter
   # list.
   Code: [
-    o 'PARAM_START ParamList PARAM_END FuncGlyph Block', -> new Code $2, $5, $4
-    o 'FuncGlyph Block',                        -> new Code [], $2, $1
+    o 'PARAM_START ParamList PARAM_END OptAsync FuncGlyph Block', -> new Code $2, $6, $5, $4
+    o 'ASYNC FuncGlyph Block',                  -> new Code [], $3, $2, true
+    o 'FuncGlyph Block',                        -> new Code [], $2, $1, false
+  ]
+
+  OptAsync: [
+    o '',                                       -> false
+    o 'ASYNC',                                  -> true
   ]
 
   # CoffeeScript has two different symbols for functions. `->` is for ordinary

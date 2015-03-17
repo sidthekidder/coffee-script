@@ -1708,11 +1708,12 @@ exports.Assign = class Assign extends Base
 # When for the purposes of walking the contents of a function body, the Code
 # has no *children* -- they're within the inner scope.
 exports.Code = class Code extends Base
-  constructor: (params, body, tag) ->
+  constructor: (params, body, tag, asyncFlag = false) ->
     super()
     @params  = params or []
     @body    = body or new Block
     @icedgen = tag is 'icedgen'
+    @isAsync = asyncFlag
     @icedPassedDeferral = null
     @bound   = tag is 'boundfunc' or @icedgen
     @isGenerator = @body.contains (node) ->
@@ -1797,10 +1798,15 @@ exports.Code = class Code extends Base
       answer.push p...
     answer.push @makeCode ') {'
 
-    # Augment @body with iced-specific features
-    @icedPatchBody o
+    if @isAsync
+      asyncWrapper = new Promise @body
+      answer = answer.concat(@makeCode("\n#{@tab}#{@tab}"), asyncWrapper.compileNode(o), @makeCode("\n#{@tab}"))
 
-    answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n#{@tab}")) unless @body.isEmpty()
+    else
+      # Augment @body with iced-specific features
+      @icedPatchBody o
+      answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n#{@tab}")) unless @body.isEmpty()
+  
     answer.push @makeCode '}'
 
     return [@makeCode(@tab), answer...] if @ctor
@@ -1890,6 +1896,28 @@ exports.Code = class Code extends Base
     parts.push @klass if @klass
     parts.push @name if @name
     parts.join '.'
+
+#### Promise
+
+exports.Promise = class Promise extends Base
+  constructor: (body) ->
+    super()
+    @body = body or new Block
+
+  makeScope: (parentScope) -> new Scope parentScope, @body, this
+
+  # Compilation creates a new scope
+  compileNode: (o) ->
+
+    o.scope  = del(o, 'classScope') or @makeScope o.scope
+    o.indent += TAB
+
+    answer = 'return new Promise(function() {'
+    answer = [@makeCode(answer)]
+    answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n\t\t")) unless @body.isEmpty()
+    answer.push @makeCode '});'
+    answer
+
 
 #### Param
 
