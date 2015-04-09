@@ -1798,14 +1798,9 @@ exports.Code = class Code extends Base
       answer.push p...
     answer.push @makeCode ') {'
 
-    if @isAsync
-      asyncWrapper = new Promise @body
-      answer = answer.concat(@makeCode("\n#{@tab}#{@tab}"), asyncWrapper.compileNode(o), @makeCode("\n#{@tab}"))
-
-    else
-      # Augment @body with iced-specific features
-      @icedPatchBody o
-      answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n#{@tab}")) unless @body.isEmpty()
+    # Augment @body with iced-specific features
+    @icedPatchBody o
+    answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n#{@tab}")) unless @body.isEmpty()
   
     answer.push @makeCode '}'
 
@@ -1896,28 +1891,6 @@ exports.Code = class Code extends Base
     parts.push @klass if @klass
     parts.push @name if @name
     parts.join '.'
-
-#### Promise
-
-exports.Promise = class Promise extends Base
-  constructor: (body) ->
-    super()
-    @body = body or new Block
-
-  makeScope: (parentScope) -> new Scope parentScope, @body, this
-
-  # Compilation creates a new scope
-  compileNode: (o) ->
-
-    o.scope  = del(o, 'classScope') or @makeScope o.scope
-    o.indent += TAB
-
-    answer = 'return new Promise(function() {'
-    answer = [@makeCode(answer)]
-    answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n\t\t")) unless @body.isEmpty()
-    answer.push @makeCode '});'
-    answer
-
 
 #### Param
 
@@ -2687,6 +2660,39 @@ exports.Await = class Await extends Base
     super p, o
     @icedNodeFlag = o.foundAwaitFunc = o.foundAwait = true
 
+#### makewait
+
+# The **Await.assign** is used to assign a local variable to value,
+# or to set the property of an object -- including within object literals.
+exports.makewait = (variable, value, lineno) ->
+  hasDefer = value.contains isDefer
+
+  # if this is a bare await containing a signle expression (variable is true)
+  # then it should be treated as an iced-await if it contains 'defer'.
+  if variable is true and hasDefer
+    variable = false
+    value = Block.wrap [ value ]
+
+  # if this is a bare await containing a block, then it is an iced-style await.
+  if variable is false
+    result = new Await value
+    if not hasDefer
+      result.error 'await block is missing a defer statement'
+    return result
+
+  # if this is an await assignment, then parse it as if it uses defer notation.
+  # written as: x = await expr
+  # parses as:  await (expr).then(defer x)
+  # TODO: consider doing this as part of the iced transformation
+  expr = new Value new Parens value
+  expr_then = expr.add new Access new Value new Literal "then"
+  defer_args = if variable is true then [] else [variable]
+  call = new Call(expr_then, [ new Defer(defer_args, lineno) ])
+  result = new Await Block.wrap [ call ]
+  if hasDefer
+    result.error 'promise-style await must not have a defer statement'
+  return result
+
 #### IcedRuntime
 #
 # By default, the iced libraries are require'd via nodejs' require.
@@ -3308,6 +3314,9 @@ Closure =
     (node instanceof Literal and node.value is 'this' and not node.asKey) or
       (node instanceof Code and node.bound) or
       (node instanceof Call and node.isSuper)
+
+isDefer = (node) ->
+  node instanceof Defer
 
 # Unfold a node's child if soak, then tuck the node under created `If`
 unfoldSoak = (o, parent, name) ->
