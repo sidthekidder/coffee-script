@@ -438,6 +438,20 @@ exports.Block = class Block extends Base
       @expressions.push(new Return null, true)
     this
 
+  # tag all returns in the block with autocb.
+  makeAutocb: (expressions) ->
+    len = expressions.length
+    while len--
+      expr = expressions[len]
+
+      #TODO: recursively call nested expressions through icedContinuationBlocks
+      #if expr.icedContinuationBlock
+        #expressions[len] = @makeAutocb expr.icedContinuationBlock.expressions
+
+      if expr instanceof Return
+        expressions[len].icedHasAutocbFlag = true
+    this
+
   # A **Block** is the only node that can serve as the root.
   compileToFragments: (o = {}, level) ->
     if o.scope then super o, level else @compileRoot o
@@ -1798,9 +1812,27 @@ exports.Code = class Code extends Base
       answer.push p...
     answer.push @makeCode ') {'
 
-    # Augment @body with iced-specific features
-    @icedPatchBody o
-    answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n#{@tab}")) unless @body.isEmpty()
+    if @isAsync
+      args = [ new Param((new Literal 'autocb')), new Param((new Literal 'autoerrorcb')) ]
+      codeBody = new Code(args, @body)
+
+      asyncWrapper1 = new Literal('Promise')
+      asyncWrapper2 = new Call(asyncWrapper1, [ codeBody ])
+      asyncWrapper3 = new Op('new', asyncWrapper2)
+      asyncWrapper = new Op('return ', asyncWrapper3)
+
+      # replace return expressions in the body with autocb
+      @body.makeAutocb @body.expressions
+      
+      # Augment @body with iced-specific features
+      @icedIsAutocbCode = true
+      @icedPatchBody o
+      answer = answer.concat(@makeCode("\n#{@tab}#{@tab}"), asyncWrapper.compileNode(o), @makeCode("\n#{@tab}"))
+
+    else
+      # Augment @body with iced-specific features
+      @icedPatchBody o
+      answer = answer.concat(@makeCode("\n"), @body.compileWithDeclarations(o), @makeCode("\n#{@tab}")) unless @body.isEmpty()
   
     answer.push @makeCode '}'
 
