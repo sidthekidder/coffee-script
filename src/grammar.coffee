@@ -200,10 +200,8 @@ grammar =
   # of **Block** preceded by a function arrow, with an optional parameter
   # list.
   Code: [
-    o 'PARAM_START ParamList PARAM_END ASYNC FuncGlyph Block', -> makepromise $2, $6, $5, $4
-    o 'PARAM_START ParamList PARAM_END FuncGlyph Block', -> new Code $2, $5, $4
-    o 'ASYNC FuncGlyph Block',                  -> makepromise [], $3, $2, true
-    o 'FuncGlyph Block',                        -> new Code [], $2, $1
+    o 'PARAM_START ParamList PARAM_END FuncGlyph Block', -> makepromise $2, $5, $4
+    o 'FuncGlyph Block',                        -> makepromise [], $2, $1
   ]
 
   # CoffeeScript has two different symbols for functions. `->` is for ordinary

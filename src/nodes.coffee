@@ -1708,12 +1708,11 @@ exports.Assign = class Assign extends Base
 # When for the purposes of walking the contents of a function body, the Code
 # has no *children* -- they're within the inner scope.
 exports.Code = class Code extends Base
-  constructor: (params, body, tag, asyncFlag = false) ->
+  constructor: (params, body, tag) ->
     super()
     @params  = params or []
     @body    = body or new Block
     @icedgen = tag is 'icedgen'
-    @isAsync = asyncFlag
     @icedPassedDeferral = null
     @bound   = tag is 'boundfunc' or @icedgen
     @isGenerator = @body.contains (node) ->
@@ -2696,15 +2695,19 @@ exports.makewait = (variable, value, lineno) ->
 #### makepromise
 
 # makepromise nests the function body inside a new Promise
-exports.makepromise = (params, body, tag, asyncFlag) ->
+# IF an Await expression is present inside the body
+exports.makepromise = (params, body, tag) ->
 
-  # add 'autocb' and 'autoerrorcb' params
-  args = [ new Param((new Literal 'autocb')), new Param((new Literal 'autoerrorcb')) ]
-  codeBody = new Code(args, body)
-  promiseWrapper = new Block.wrap [ new Op('new', new Call(new Literal('Promise'), [ codeBody ])) ]
+  if body.contains isAwait
+    # add 'autocb' and 'autoerrorcb' params
+    args = [ new Param((new Literal 'autocb')), new Param((new Literal 'autoerrorcb')) ]
 
-  result = new Code params, promiseWrapper, tag, asyncFlag
-  return result
+    tryBody = new Try(body, null, new Block.wrap [ new Literal 'autoerrorcb(_error)' ] )
+
+    codeBody = new Code(args, new Block.wrap [ tryBody ] )
+    body = new Block.wrap [ new Op('new', new Call(new Literal('Promise'), [ codeBody ])) ]
+
+  return new Code params, body, tag
 
 #### IcedRuntime
 #
@@ -3331,6 +3334,9 @@ Closure =
 isDefer = (node) ->
   node instanceof Defer
 
+isAwait = (node) ->
+  node instanceof Await
+  
 # Unfold a node's child if soak, then tuck the node under created `If`
 unfoldSoak = (o, parent, name) ->
   return unless ifn = parent[name].unfoldSoak o
